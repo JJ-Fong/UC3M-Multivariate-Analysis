@@ -1,0 +1,196 @@
+---
+title: "Distributions Boxplots"
+subtitle: "Exercise 1"
+author: "Javier Fong - 1004379994"
+output: 
+  html_document:
+    code_folding: show
+    toc: true
+    toc_float: true
+    toc_depth: 4
+    theme: flatly
+---
+
+```{r, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+library(knitr)
+library(kableExtra)
+library(reshape2)
+```
+
+# Theoretical values
+
+Obtain the five quantities used to define a boxplot for the following  distributions:
+
+* Cauchy.
+* Chi-square with 1 degree of freedom.
+* Exponential distribution with $\lambda = 1$
+* F-distribution with 5 and 2 degrees of freedom. 
+* Student-t distribution with 5 degrees of freedom. 
+
+```{r}
+relevant_q = c(0.25, 0.5, 0.75)
+
+boxplot_values = data.frame(
+  cauchy = qcauchy(relevant_q)
+  , chisqr = qchisq(relevant_q, df = 1)
+  , exp = qexp(relevant_q, rate = 1)
+  , fdist = qf(relevant_q, df1 = 5, df2 = 2)
+  , student = qt(relevant_q, df = 5)
+) %>% 
+  t() %>% 
+  data.frame() %>% 
+  dplyr::rename(first_q = X1, second_q = X2, third_q = X3) %>% 
+  dplyr::mutate(
+    iqr = third_q - first_q
+    , lower_b = first_q - (1.5 * iqr)
+    , upper_b = third_q + (1.5 * iqr)
+  ) %>% cbind (
+    low_outliers = c(
+      pcauchy(.$lower_b[1])
+      , pchisq(.$lower_b[2], df = 1)
+      , pexp(.$lower_b[3], rate = 1)
+      , pf(.$lower_b[4], df1 = 5, df2 = 2)
+      , pt(.$lower_b[5], df = 5)
+    ), 
+    high_outliers = c(
+      1 - pcauchy(.$upper_b[1])
+      , 1 - pchisq(.$upper_b[2], df = 1)
+      , 1 - pexp(.$upper_b[3], rate = 1)
+      , 1 - pf(.$upper_b[4], df1 = 5, df2 = 2)
+      , 1 - pt(.$upper_b[5], df = 5)
+    )
+  )
+```
+
+
+```{r, echo = F}
+rownames(boxplot_values) = c("Cauchy", "Chi-square", "Exponential", "F", "Student")
+boxplot_values %>% 
+  mutate(across(where(is.numeric), round, 4)) %>%
+  kbl(
+    format = "html"
+    , caption = "Theorical Distribution values for Boxplot Definition"
+    , col.names = c(
+      "First Quartile"
+      , "Second Quartile"
+      , "Third Quartile"
+      , "IQR"
+      , "Lower Bound"
+      , "Upper Bound"
+      , "Prob. Low Outliers"
+      , "Prob. High Outliers")
+  ) %>%
+    kable_styling()
+```
+
+# Empirical Values
+
+Generate 10.000 random observation for each distribution and compare the empirical results to the theoretical values expected. 
+
+```{r, fig.cap="Boxplot for 10.000 Random values for each Distribution", fig.align='center', warning=F, message=F}
+set.seed(45)
+n = 10000
+
+simulations = data.frame (
+  cauchy_sim = rcauchy(n)
+  , chisqr_sim = rchisq(n, df = 1)
+  , exp_sim = rexp(n, rate = 1)
+  , fdist_sim = rf(n, df1 = 5, df2 = 2)
+  , student_sim = rt(n, df = 5)
+ ) 
+
+simulations %>% 
+  rename(
+    "Cauchy" = cauchy_sim
+    , "Chi-square" = chisqr_sim
+    , "Exponential" = exp_sim
+    , "F" = fdist_sim
+    , "Student" = student_sim
+  ) %>% 
+  melt() %>% 
+  ggplot(
+    aes(x = value, col = variable) 
+  ) + 
+  geom_boxplot() + 
+  facet_wrap(~variable, scale = "free") 
+```
+
+
+```{r}
+sim_summary = apply(
+  simulations
+  , MARGIN = 2
+  , FUN = quantile
+) %>% t()
+
+emp_values = sim_summary[,c(2,3,4)] %>% 
+  data.frame() %>% 
+  rename(first_q = X25., second_q = X50., third_q = X75.) %>% 
+  mutate(
+    iqr = third_q - first_q
+    , lower_b = first_q - 1.5 * iqr
+    , upper_b = third_q + 1.5 * iqr
+    , low_outliers = colSums(sweep(simulations, 2, lower_b, `<`))/nrow(simulations)
+    , high_outliers = colSums(sweep(simulations, 2, upper_b, `>`))/nrow(simulations)
+  )
+
+
+```
+
+```{r, echo = F}
+rownames(emp_values) = c("Cauchy", "Chi-square", "Exponential", "F", "Student")
+emp_values %>% 
+  mutate(across(where(is.numeric), round, 4)) %>%
+  kbl(
+    format = "html"
+    , caption = "Empirical values for Boxplot Definition"
+    , col.names = c(
+      "First Quartile"
+      , "Second Quartile"
+      , "Third Quartile"
+      , "IQR"
+      , "Lower Bound"
+      , "Upper Bound"
+      , "Prob. Low Outliers"
+      , "Prob. High Outliers")
+  ) %>%
+    kable_styling()
+```
+
+# Comparison Theoretical vs Empirical
+
+```{r}
+difference = t(emp_values) - t(boxplot_values)
+```
+
+
+```{r, echo = F}
+rownames(difference) = c(
+      "First Quartile"
+      , "Second Quartile"
+      , "Third Quartile"
+      , "IQR"
+      , "Lower Bound"
+      , "Upper Bound"
+      , "Prob. Low Outliers"
+      , "Prob. High Outliers")
+
+difference %>% 
+  data.frame() %>%
+  mutate(across(where(is.numeric), round, 4)) %>%
+  kbl(
+    format = "html"
+    , caption = "Differences Between Empirical and Theoretical Values"
+    , col.names = c(
+      "Cauchy"
+      , "Chi-square"
+      , "Exponential"
+      , "F"
+      , "Student"
+      )
+  ) %>%
+    kable_styling()
+```
+
