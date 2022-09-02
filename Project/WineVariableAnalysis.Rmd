@@ -1,0 +1,209 @@
+---
+title: "Wine Analysis"
+subtitle: "Multivariate Analysis Project" 
+author: "Javier Fong 100437994" 
+output: 
+  bookdown::html_document2:
+    code_folding: show
+    toc: true
+    toc_float: true
+    toc_depth: 4
+    theme: flatly
+---
+
+```{r env, echo = F}
+library(rstudioapi)
+setwd(dirname(getActiveDocumentContext()$path)) 
+set.seed(100)
+knitr::opts_chunk$set(fig.height = 8,fig.width=10, fig.align = 'center', echo = F, warning = F, message = F)
+```
+
+```{r dependencies, echo = F, message=F, warning=F}
+library(rstudioapi)
+library(ggplot2)
+library(reshape)
+library(dplyr) 
+library(corrplot)
+library(tidyverse)
+library(andrews)
+library(rrcov)
+library(MASS)
+library(factoextra)
+library(cluster)
+library(gridExtra)
+```
+ 
+# Description 
+
+```{r}
+data = read.csv("wine-dataset.csv")
+```
+
+The data set *wine-quality-white-and-red.csv* contains information from physicochemical and sensory tests performed on the white and red variants of the Portuguese *"Vinho Verde"* wine. It can be found [here.](https://www.kaggle.com/datasets/rajyellow46/wine-quality)
+
+It contains the following variables: 
+
+**Categorical** or sensory values:  
+
+* *Type*
+
+**Numerical** or physcochemical tests: 
+
+* *fixed.acidity*
+* *volatile.acidity*
+* *citric.acid*
+* *residual.sugar*
+* *chloride*
+* *free.sulfur.dioxide*
+* *total.sulfur.dioxide*
+* *density*
+* *pH*
+* *sulphates*
+* *alcohol*
+
+# Exploratory Analysis
+
+
+```{r, echo = F}
+data = data %>% mutate(type = as.factor(type))
+```
+
+The data set consists of 6497 observations of 13 different variables: 
+
+```{r}
+data %>% summary()
+```
+
+The data set is primarily conformed of white wine. Out the 6497 observations, 4898 are of white wine. This represents a 75% of the total data set. 
+
+```{r, fig.cap="Wine type distribution", fig.align='center'}
+data %>% 
+  ggplot(
+    aes(y = type, fill = type)
+  ) + 
+  geom_bar() +
+  geom_text(stat = "count", aes(label = ..count.., hjust = 2)) + 
+  theme_minimal() + 
+  xlab("Count of Observations") +
+  ylab("Type of Wine")
+```
+
+When we analyze the density of each of the continuous variables, we see that all of them are rights hand skew. Meaning high concentration of points in the left tail or lower values of the variable. Might also be interpreted as a signal of outliers with high values. Another interesting observation is that most of them seem as bimodal distributions, which might be due to a different mode in each of the 2 types of wine.  
+
+```{r, fig.cap = "Numerical variable densities", fig.align='center'}
+data %>% 
+  melt(id = c("type")) %>% 
+  ggplot(
+    aes(
+      x = value
+    )
+  ) + 
+  geom_density() + 
+  facet_wrap(~variable, scales = "free") + 
+  theme_minimal()
+```
+
+In the following plot we see the same plots as above, but divided for each type of wine. We can group the variables and their behavior for each type of wine in the following groups: 
+
+* **High concentration in the left tail for white wines, even distribution for red wine**: fixed.acidity, volatile.acidity, citric.acid, density. 
+* **High concentration in the left tail for red wines, even distribution for white wine**: residual sugar, free.sulfur.acid, total.sulfur.acid. 
+* **Same (or similar) density for both types of wine**: chlorides, density, pH, sulphates, alcohol. 
+
+```{r, fig.cap = "Numerical variable densities by type of wine", fig.align='center'}
+data %>% 
+  melt(id = c("type")) %>% 
+  ggplot(
+    aes(
+      x = value
+      , col = type
+    )
+  ) + 
+  geom_density() + 
+  facet_wrap(~variable, scales = "free") + 
+  theme_minimal()
+```
+
+Now, let's see if there's any kind of relationship between all possible pair of variables.  
+
+* All Wine: The first scatter plot matrix represent the relationship between variables without separating by type of wine. In it we cannot appreciate any obvious kind relationship between any pair of variables. 
+
+```{r}
+data %>% 
+  dplyr::select(-type, -quality) %>% 
+  pairs(main = "Scatter plot for ALL Wine")
+```
+
+* White Wine: In the second plot we're only plotting the relationship between the variables for the white wine. Interestingly it resembles a lot the previous plot, although that's to be expected given that nearly 75% of our data belongs to this group. 
+
+```{r}
+data %>% 
+  dplyr::filter(type == "white") %>% 
+  dplyr::select(-type, -quality) %>% 
+  pairs(main = "Scatter plot for WHITE Wine")
+```
+
+* Red Wine: At last we can examine the relationship between the variables isolating just the red wine. Although it does resemble a lot our two previous plots, there seems to be a close to linear relationship between *density vs fixed.acidity* and *ph vs fixed.acidity*. Well, maybe not completely linear, but more of a correlation between both pair of variables. 
+
+```{r}
+data %>% 
+  dplyr::filter(type == "red") %>% 
+  dplyr::select(-type, -quality) %>% 
+  pairs(main = "Scatter plot for RED Wine")
+```
+
+Now lets see if there's any different overall behavior between both types of wine. For this, we'll use the PCP and Andrew's plots. 
+
+The Parallel Coordinates Plot (PCP) can be useful to find highly correlated variables and distinct group behaviors. In our case we have so many observations that identifying correlated variables is almost impossible at plain sight. On the other hand, we can also notice that the behavior of both groups is pretty similar in most of the variables, but not in all of them, White wine has a larger arrange of values for the variables of free.sulfur.dioxide, total.sulfur.dioxide and residual.sugar. And red wine has a small group of observations (maybe outliers?) in the chlorides variable. It also seems to reach higher values than white wine for sulphates and volatile.acidity. Even saying all that, there isn't such a clear cut between both types of wine. 
+
+That conclusion is also enforced by the Andrews plot at the right side of our figure. In it we graph the finite Fourier series define by each observation. In this case, we can say that the the red wine lines still behave between what could be expected for the white wine plots. 
+
+```{r}
+grid.arrange(
+data %>% 
+  dplyr::mutate(id = 1:n()) %>% 
+  dplyr::mutate_if(is.numeric, scale) %>% 
+  tidyr::gather(key, value, c(2:12)) %>% 
+  ggplot(
+    aes(x = key, y = value, col = type, group = id)
+  ) +
+  geom_line(lwd = 0.2) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.position = "none") + xlab("Variable") + ylab("Value") 
+,
+data %>% 
+  dplyr::mutate(id = 1:n()) %>% 
+  dplyr::mutate_if(is.numeric, scale) %>% 
+  tidyr::gather(key, value, c(2:12)) %>% 
+  ggplot(
+    aes(x = key, y = value, col = type)
+  ) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + xlab("Variable") + ylab("")
+, ncol = 2)
+```
+
+
+```{r}
+data %>% andrews(clr = 1, ymax = 5)
+```
+
+$$\mathbf{u} 5\vec u +7\hat y$$
+
+# Characteristics
+
+## Mean Vector 
+
+## Covariance Analysis 
+
+## Correlation Analysis 
+
+## Outliers (by group)
+
+# Principal Component Analysis
+
+# Clustering
+
+## Partitional Clustering 
+
+## Hierarchical Clustering 
+
+
