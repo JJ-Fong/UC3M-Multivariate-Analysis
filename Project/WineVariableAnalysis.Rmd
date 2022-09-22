@@ -31,6 +31,7 @@ library(MASS)
 library(factoextra)
 library(cluster)
 library(gridExtra)
+library(kableExtra)
 ```
  
 # Description 
@@ -76,7 +77,7 @@ data %>% summary()
 
 The data set is primarily conformed of white wine. Out the 6497 observations, 4898 are of white wine. This represents a 75% of the total data set. 
 
-```{r, fig.cap="Wine type distribution", fig.align='center'}
+```{r, fig.cap="Wine type distribution", fig.height=5}
 data %>% 
   ggplot(
     aes(y = type, fill = type)
@@ -155,9 +156,9 @@ Now lets see if there's any different overall behavior between both types of win
 
 The Parallel Coordinates Plot (PCP) can be useful to find highly correlated variables and distinct group behaviors. In our case we have so many observations that identifying correlated variables is almost impossible at plain sight. On the other hand, we can also notice that the behavior of both groups is pretty similar in most of the variables, but not in all of them, White wine has a larger arrange of values for the variables of free.sulfur.dioxide, total.sulfur.dioxide and residual.sugar. And red wine has a small group of observations (maybe outliers?) in the chlorides variable. It also seems to reach higher values than white wine for sulphates and volatile.acidity. Even saying all that, there isn't such a clear cut between both types of wine. 
 
-That conclusion is also enforced by the Andrews plot at the right side of our figure. In it we graph the finite Fourier series define by each observation. In this case, we can say that the the red wine lines still behave between what could be expected for the white wine plots. 
+That conclusion is also enforced by the Andrews plot in the lower side of our figure. In it we graph the finite Fourier series define by each observation. In this case, we can say that the the red wine lines still behave between what could be expected for the white wine plots. 
 
-```{r}
+```{r, fig.height=5}
 grid.arrange(
 data %>% 
   dplyr::mutate(id = 1:n()) %>% 
@@ -167,6 +168,7 @@ data %>%
     aes(x = key, y = value, col = type, group = id)
   ) +
   geom_line(lwd = 0.2) +
+  theme_minimal() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.position = "none") + xlab("Variable") + ylab("Value") 
 ,
 data %>% 
@@ -177,33 +179,850 @@ data %>%
     aes(x = key, y = value, col = type)
   ) +
   geom_boxplot() +
+  theme_minimal() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + xlab("Variable") + ylab("")
 , ncol = 2)
 ```
 
 
-```{r}
+```{r, fig.height=5}
 data %>% andrews(clr = 1, ymax = 5)
 ```
 
-$$\mathbf{u} 5\vec u +7\hat y$$
 
 # Characteristics
 
 ## Mean Vector 
 
+Below we have the mean vector (mean value for each of the random  variables) for the whole data set and each type of wine in it. From it we can see some actually interesting facts, for example that the mean value of *residual.sugar* for both wines is pretty different. Red wine has three times more sugar (in average) than white wine. In the same line as sugar we find both sulfur dioxide variables, *free.sulfur.dioxide* & *total.sulfur.dioxide*. In this case red wine has ~x2.5 and ~x3 higher values than the average white wine observation. On the contrary, white wine has considerably higher values of *volatile.acidity* (~x2) and *chlorides* (~x2). 
+
+As for the rest of the variables, there is no considerably difference to be made between both subgroups.
+
+
+```{r}
+rbind(
+  data %>% dplyr::summarise_all(~(round(mean(.),4))) 
+  , data %>% dplyr::group_by(type) %>% dplyr::summarise_all(~(round(mean(.),4)))
+) %>% 
+  t() %>% 
+  data.frame() %>%
+  dplyr::slice(-1) %>%
+  dplyr::rename(All = X1, White = X2, Red = X3) %>% 
+  kbl(
+    format = "html"
+    , caption = "Mean vector for all wine and by each subgroup"
+  ) %>%
+  kable_material(c("striped")) %>%
+  column_spec(1, bold = T)
+```
+
+
 ## Covariance Analysis 
+
+Following, we have the Covarince Matrices for the whole data set and for each type of wine. From them we can gather that most of the variables are independent from each other given that most of the entries are close to or exactly 0. But we do have some noticeable exceptions: 
+
+* High Positive Covariance: This pairs of variables move together, meaning, and increase in one supose an increase in the other. 
+  * **All Wine**: *residual.sugar* & *total.sulfur.dioxide*, *free.sulfur.dioxide* & *total.sulfur.dioxide*. 
+  * **Red Wine**: *residual.sugar* & *total.sulfur.dioxide*, *free.sulfur.dioxide* & *total.sulfur.dioxide*. 
+  * **White Wine**: *free.sulfur.dioxide* & *total.sulfur.dioxide*. 
+  
+* High Negative Covariance: Pair of variables with inverse relationship. Meaning, an increase in one of them means a decrease in the other one. 
+  * **All Wine**: *fixed.acidity* & *total.sulfur.dioxide*, *alcohol* & *total.sulfur.dioxide*. 
+
+```{r}
+data %>% select_if(is.numeric) %>% cov() %>% round(. , 2)
+```
+
+
+```{r}
+data %>% dplyr::filter(type == "red") %>% select_if(is.numeric) %>% cov() %>% round(. , 2)
+```
+
+
+```{r}
+data %>% dplyr::filter(type == "white") %>% select_if(is.numeric) %>% cov() %>% round(. , 2) 
+```
 
 ## Correlation Analysis 
 
+Below we can find the correlation plots for every pair of variables for each sub group in the data set. Observation worth mentioning: 
+
+* In all the subgroups exist a high correlation between *free.sulfur.dioxide* and *total.sulfur.dioxide*, but thats to be expected given that they represent the presence of the same element. The same can be said between *citric.acid* and *fixed.acidity*. 
+* There is also a high inverse correlation between *density* and *alcohol*. Meaning the more alcohol wine has, the less dense it is. 
+* In white wine, the more sweet it is (*residual.sugar*) the more dense it is. The *density* is also correlated to the amount of *total.sulfur.acid* in the wine. 
+* In red wine, higher *fixed.acidity* indicates lower values of *pH* and higher *density*. Interestingly, high presence of *citric.acid* correlates to lower values of *volatile.acidity*, indicating the nature of citric acid. 
+
+
+```{r, fig.cap="Correlation Plots by Wine Subgroup"}
+
+par(mfrow = c(2,2))
+
+data %>% 
+  dplyr::filter(type == "red") %>% 
+  select_if(is.numeric) %>% 
+  cor() %>% 
+  round(. , 2) %>% 
+  corrplot(
+    type = "upper"
+    , diag = F
+    , main = "Red Wine Correlation"
+    , tl.col = "black"
+    , tl.cex = 0.6
+    , mar = c(0,0,2,0)
+    , method = "square"
+    , addCoef.col = "black"
+    , number.digits = 1
+    , number.cex = 0.6
+  )
+
+
+data %>% 
+  dplyr::filter(type == "white") %>% 
+  select_if(is.numeric) %>% 
+  cor() %>% 
+  round(. , 2) %>% 
+  corrplot(
+    type = "upper"
+    , diag = F
+    , main = "White Wine Correlation"
+    , tl.col = "black"
+    , tl.cex = 0.6
+    , mar = c(0,0,2,0)
+    , method = "square"
+    , addCoef.col = "black"
+    , number.digits = 1
+    , number.cex = 0.6
+  )
+
+data %>% 
+  select_if(is.numeric) %>% 
+  cor() %>% 
+  round(. , 2) %>% 
+  corrplot(
+    type = "upper"
+    , diag = F
+    , tl.col = "black"
+    , tl.cex = 0.6
+    , mar = c(0,0,2,0)
+    , method = "square"
+    , addCoef.col = "black"
+    , number.digits = 1
+    , number.cex = 0.6
+    , main = "All Wine Correlation"
+  )
+
+```
+
+
 ## Outliers (by group)
+
+We'll use the Minimum Covariance Determinant (MCD) estimators to analyze the effect of out liers in our data. Also, this analysis must be performed separately for each type group.
+
+### Red Wine Outliers 
+
+Comparing the 12 eigen values for the covariance matrix of the whole red wine values in the data set against the values for the MCD matrix, we can see that there is a reduction in them using only the most centered values. 
+
+```{r}
+red_quant = data %>% dplyr::filter(type == "red") %>% dplyr::select_if(is.numeric) %>% dplyr::select(-quality)
+
+red_mcd_values = CovMcd(
+  red_quant
+  , alpha = 0.5
+  , nsamp = "deterministic"
+)
+
+red_mcd_mean = red_mcd_values$center
+red_mcd_cov = red_mcd_values$cov
+red_mcd_cor = cov2cor(red_mcd_values$cov)
+
+red_eigen_s = eigen(red_quant %>% cov())$values
+red_eigen_mcd_s = eigen(red_mcd_cov)$values
+
+red_eigen_comp = rbind(red_eigen_s, red_eigen_mcd_s)
+
+rownames(red_eigen_comp) = c("Red Wine Eigen Values","MCD Red Wine Eigen Values")
+
+red_eigen_comp %>% 
+  kbl(
+    format = "html"
+    , caption = "Eigen Values Comparison"
+  ) %>%
+  kable_material(c("striped")) %>%
+  column_spec(1, bold = T) %>% 
+  scroll_box(width = "100%")
+```
+
+
+```{r, fig.cap = "Red Wine Data Set and MCD Eigen values comparison"}
+min_y = min(c(red_eigen_s, red_eigen_mcd_s)) - 1
+max_y = max(c(red_eigen_s, red_eigen_mcd_s)) - 1
+
+plot(
+  1:length(red_eigen_s)
+  , red_eigen_s
+  , type = "b"
+  , col = "black"
+  , ylim = c(min_y, max_y)
+  , xlab = "Variable"
+  , ylab = "Eigen Values"
+) 
+points(1:length(red_eigen_mcd_s), red_eigen_mcd_s, col = "red", type = "b")
+legend(
+  length(red_eigen_s) / 2 
+  , max_y / 2 
+  , legend=c("Eigenvalues of S'","Eigenvalues of S' MCD")
+  , col=c("black","red")
+  , lty= 1
+)
+```
+
+Now we compare the correlation between the variables using only the heaviest weighted observations against the full red wine information. Here we see that some of the correlations between variables increases, meaning the out liers are diminishing this relationships. That's the case for the *fixed.acidity & density*, *chlorides & density* and *sulphates & alcohol* relationships. 
+
+```{r, fig.cap = "Corraletion comparison between red wine subgroup"}
+par(mfrow = c(1,2))
+red_mcd_cor %>% 
+  corrplot(
+    type = "upper"
+    , diag = F
+    , tl.col = "black"
+    , tl.cex = 0.6
+    , mar = c(0,0,2,0)
+    , method = "square"
+    , addCoef.col = "black"
+    , number.digits = 1
+    , number.cex = 0.6
+    , main = "MCD Red Wine Correlation"
+  )
+
+cor(red_quant) %>% 
+  corrplot(
+    type = "upper"
+    , diag = F
+    , tl.col = "black"
+    , tl.cex = 0.6
+    , mar = c(0,0,2,0)
+    , method = "square"
+    , addCoef.col = "black"
+    , number.digits = 1
+    , number.cex = 0.6
+    , main = "All Red Wine Correlation"
+  )
+```
+
+
+```{r}
+n = nrow(red_quant)
+p = ncol(red_quant)
+
+red_mcd_mah = red_mcd_values$mah
+red_outliers = which(red_mcd_mah > qchisq(.99, p))
+```
+
+Using the %1 highest Chi Square for the `r p` variables as threshold to classify as outlier, we get that there are `r length(red_outliers)` out liers in the red wine subgroup. This represents the `r round(100*length(red_outliers)/length(red_mcd_mah),2)`% of our observations.  
+
+```{r, fig.cap = "Outliers by Mahalanobis Distance", fig.height=5}
+red_obs_color = rep("green", n)
+red_obs_color[red_outliers] = "red"
+
+par(mfrow = c(1,2))
+plot(
+  1:n
+  , red_mcd_mah
+  , col = red_obs_color
+  , xlab = "Observation"
+  , ylab = "Mahalanobis Distance"
+)
+abline(h = qchisq(.99, p), lwd = 1, col = "black")
+
+plot(
+  1:n
+  , log(red_mcd_mah)
+  , col = red_obs_color
+  , xlab = "Observation"
+)
+abline(h = log(qchisq(.99, p)), lwd = 1, col = "black")
+```
+
+Now we visualize the same plot as in the previous chapter, but this time we colored the outliers as RED points in the plot. We notice that these outliers are the the points in the edge of the mass observed in each relationship and the "good" data seem to be in the middle of the group. We could name these observations as the most similar among itself. 
+
+```{r}
+red_quant %>% 
+  pairs(col = red_obs_color)
+```
+
+Using the PCP and the Andrews plot we see a more distinct behavior between the outliers. In the PCP, those observation with extremely high values (specially in the *chlorides* and the *residual.sugar* variables) are the ones identified as outliers. On the Andrews plot, we see the outliers (blue lines) as the functions in the extremes, be it on the high side or the lower side of the group. 
+
+```{r, fig.height=4}
+red_quant %>% 
+  dplyr::mutate_if(is.numeric, scale) %>%
+  dplyr::mutate(id = 1:n(), obs_col = red_obs_color) %>% 
+  tidyr::gather(key, value, c(1:11)) %>% 
+  ggplot(
+    aes(x = key, y = value, col = obs_col, group = id)
+  ) +
+  geom_line(lwd = 0.2) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.position = "none") + xlab("Variable") + ylab("Value") + 
+  scale_color_manual(values = c("green", "red"))
+
+red_quant %>% 
+  dplyr::mutate(obs_col = as.factor(red_obs_color)) %>% 
+  andrews(clr = 12, ymax = 4)
+```
+
+### White Wine Outliers 
+
+Using the same methodology as above, we use the MCD to find betters estimates to the parameters of our data. In this case, the heaviest weighted data does not improve our estimation of the covariance, as seen below on the comparison of eigen values for each matrix. 
+
+```{r}
+white_quant = data %>% dplyr::filter(type == "white") %>% dplyr::select_if(is.numeric) %>% dplyr::select(-quality)
+
+white_mcd_values = CovMcd(
+  white_quant
+  , alpha = 0.5
+  , nsamp = "deterministic"
+)
+
+white_mcd_mean = white_mcd_values$center
+white_mcd_cov = white_mcd_values$cov
+white_mcd_cor = cov2cor(white_mcd_values$cov)
+
+white_eigen_s = eigen(white_quant %>% cov())$values
+white_eigen_mcd_s = eigen(white_mcd_cov)$values
+
+white_eigen_comp = rbind(white_eigen_s, white_eigen_mcd_s)
+
+rownames(white_eigen_comp) = c("White Wine Eigen Values","MCD White Wine Eigen Values")
+
+white_eigen_comp %>% 
+  kbl(
+    format = "html"
+    , caption = "Eigen Values Comparison"
+  ) %>%
+  kable_material(c("striped")) %>%
+  column_spec(1, bold = T) %>% 
+  scroll_box(width = "100%")
+```
+
+```{r, fig.cap = "White Wine Data Set and MCD Eigen values comparison"}
+min_y = min(c(white_eigen_s, white_eigen_mcd_s)) - 1
+max_y = max(c(white_eigen_s, white_eigen_mcd_s)) - 1
+
+plot(
+  1:length(white_eigen_s)
+  , white_eigen_s
+  , type = "b"
+  , col = "black"
+  , ylim = c(min_y, max_y)
+  , xlab = "Variable"
+  , ylab = "Eigen Values"
+) 
+points(1:length(white_eigen_mcd_s), white_eigen_mcd_s, col = "red", type = "b")
+legend(
+  length(white_eigen_s) / 2 
+  , max_y / 2 
+  , legend=c("Eigenvalues of S'","Eigenvalues of S' MCD")
+  , col=c("black","red")
+  , lty= 1
+)
+```
+
+Even so, some relationship do become stronger in this subset. As is the case of the correlation between *chlorides & alcohol* and *residual.sugar & chlorides*. 
+
+```{r, fig.cap = "Corraletion comparison between white wine subgroup"}
+par(mfrow = c(1,2))
+white_mcd_cor %>% 
+  corrplot(
+    type = "upper"
+    , diag = F
+    , tl.col = "black"
+    , tl.cex = 0.6
+    , mar = c(0,0,2,0)
+    , method = "square"
+    , addCoef.col = "black"
+    , number.digits = 1
+    , number.cex = 0.6
+    , main = "MCD White Wine Correlation"
+  )
+
+cor(white_quant) %>% 
+  corrplot(
+    type = "upper"
+    , diag = F
+    , tl.col = "black"
+    , tl.cex = 0.6
+    , mar = c(0,0,2,0)
+    , method = "square"
+    , addCoef.col = "black"
+    , number.digits = 1
+    , number.cex = 0.6
+    , main = "All White Wine Correlation"
+  )
+```
+
+```{r}
+n = nrow(white_quant)
+p = ncol(white_quant)
+
+white_mcd_mah = white_mcd_values$mah
+white_outliers = which(white_mcd_mah > qchisq(.99, df = p))
+```
+
+Again, we use the %1 highest Chi Square for the `r p` variables as threshold to classify as outlier, we get that there are `r length(white_outliers)` out liers in the white wine subgroup. This represents the `r round(100*length(white_outliers)/length(white_mcd_mah),2)`% of our observations.  
+
+```{r, fig.cap = "White Wine Outliers by Mahalanobis Distance", fig.height=5}
+white_obs_color = rep("green", n)
+white_obs_color[white_outliers] = "red"
+
+par(mfrow = c(1,2))
+plot(
+  1:n
+  , white_mcd_mah
+  , col = white_obs_color
+  , xlab = "Observation"
+  , ylab = "Mahalanobis Distance"
+)
+abline(h = qchisq(.99, p), lwd = 1, col = "black")
+
+plot(
+  1:n
+  , log(white_mcd_mah)
+  , col = white_obs_color
+  , xlab = "Observation"
+)
+abline(h = log(qchisq(.99, p)), lwd = 1, col = "black")
+
+```
+
+Now we visualize the behaviour of the outliers between every pair of variables. The most interesting one is the outliers along the *chlorides* variable. You can notice that the "good" data is a very concentrated group in the left side of the plot and the outliers (red points) are all disperse to the right side. A similar behaviour can be seen along the *volatile.acidity* variable.  
+
+```{r, fig.cap = "Scatter Plot Matrix of white wine variables (with outliers)"}
+white_quant %>% 
+  pairs(col = white_obs_color)
+```
+
+At last, we examine the differences by group using the PCP and Andrews plot. In the PCP we confirm our observation made on the previous plot that a clear indicator or outlier observations are high values of *chlorides* and *volatile.acidity*. In the Andrews plot we notice the same behaviour as in the red wine outlier, on which the outliers are those function on the extremes of the group. 
+
+```{r, fig.height=4, fig.cap="PCP of White Wine (with outliers)"}
+white_quant %>% 
+  dplyr::mutate_if(is.numeric, scale) %>%
+  dplyr::mutate(id = 1:n(), obs_col = white_obs_color) %>% 
+  tidyr::gather(key, value, c(1:11)) %>% 
+  ggplot(
+    aes(x = key, y = value, col = obs_col, group = id)
+  ) +
+  geom_line(lwd = 0.2) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.position = "none") + xlab("Variable") + ylab("Value") + 
+  scale_color_manual(values = c("green", "red"))
+```
+
+
+```{r, fig.height=4, fig.cap="Andrews Plot of White Wine (with outliers)"}
+white_quant %>% 
+  dplyr::mutate(obs_col = as.factor(white_obs_color)) %>% 
+  andrews(clr = 12, ymax = 4)
+```
+
+### Outliers Note 
+
+In both subgroups we classified outliers as those observations with a squared mahalanobis distance larger than the *99-th* percentile of the Chi Square distribution with 11 degrees of freedom. We could say that the amount of outliers this classification made was extremely high in both cases, which might be an indicator that our distances do not behave as a standard normal distribution. 
+
+For the sake of this project, we'll still remove this observations from the analysis. 
+
+```{r}
+data_red = data %>% filter(type == "red") 
+data_white = data %>% filter(type == "white")
+
+data = rbind(data_red[-c(red_outliers),],data_white[-c(white_outliers),]) 
+
+```
+
 
 # Principal Component Analysis
 
+Now we'll perform a principal component analysis (PCA) to reduce the dimensionality of our data. 
+
+From this analysis we get 12 principal components, each one independent from each other and explaining a certain percentage of the variability in our data. That is the information we can see on the left side plot below. On the right side plot we have the accumulated variability explained by each new dimension. From this we decided to use only the first 4 PC's which explain 78% of our variability. So from this analysis we reduced our dimensions from 12 to 4. 
+
+```{r, fig.height=5, "Variance explain by each Principal Component"}
+data_quant = data %>% dplyr::select_if(is.numeric) %>% dplyr::select(-quality)
+data_pcs = prcomp(data_quant, scale = T)
+pcs_eig = get_eigenvalue(data_pcs)
+
+grid.arrange(
+fviz_eig(
+  data_pcs
+  , ncp = ncol(data_pcs$x)
+  , addlabels = T
+  , ggtheme = theme_minimal()
+) 
+, 
+pcs_eig %>% 
+  dplyr::mutate(id = as.factor(1:n()), dim_name = rownames(.)) %>% 
+  ggplot(
+    aes(x = id, y = cumulative.variance.percent)
+  ) + 
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_point(aes(x = id, y = cumulative.variance.percent)) + 
+  geom_line(aes(x = as.numeric(id), y = cumulative.variance.percent)) +
+  geom_text(aes(label = paste(round(cumulative.variance.percent,0),"%", sep = "")), position = position_dodge(width = 0.9), vjust = -0.25) +
+  ggtitle("Accumulative Variance Percentage") +
+  xlab("Dimensions") +
+  ylab("Accumulated Percentage of explained variances") +
+  theme_minimal() 
+  
+, ncol = 2
+)
+```
+
+## Variable weight by Dimesion 
+
+In the below plot we visualize the loading of each variable in our data in the four dimensions selected previously. We can extract the following conclusions from it: 
+
+* **Dim1** : It is highly correlated to the variables *total.sulfur.dioxide* and *free.sulfur.dioxide*. And highly inversely correlated to *volatile.acidity* and *chloride*. 
+* **Dim2** : Is correlated with *residual.sugar * and *density* and inversely correlated with *alcohol*. 
+* **Dim3**: Is correlated with  *pH*. Inversely correlated with *fixed.acidity* and *citric.acid*. 
+* **Dim4**: Is inversely correlated with *sulphates* and *pH*. 
+
+(This grouping could be interpreted as specific characteristics of the wine. Such as taste, texture, etc. But for that, one must have a certain chemical and winery expertise.)
+
+```{r, fig.cap = "Variable Loading for each Principal Component"}
+p = ncol(data_quant)
+pcs_rot = data_pcs$rotation[,c(1:4)]
+
+par(mfrow = c(2,2))
+for (i in 1:ncol(pcs_rot)) {
+  plot(
+    1:p 
+    , pcs_rot[,i]
+    , pch = 19
+    , xlab = "Variables"
+    , ylab = "Score"
+    , col = "steelblue"
+    , main = paste("Variable Weight For Dim", i) 
+  )
+  abline(h = 0)
+  abline(h = sqrt(1/p), col = "red")
+  abline(h = -sqrt(1/p), col = "red")
+  text(1:p, pcs_rot[,i], labels = colnames(data_quant), pos = 1, cex = 0.75)  
+}
+
+```
+
+## PC Separation by Type of Wine
+
+If we plot each PC against each other and color each observation based on its type of wine, we can see if any component actually helps distinguish between this qualitative variable. In the scatter plot below we can see that more clear cut is always based in any comparison between any PC and Dim1. We could interpret this as the Dim1 explaining the difference between both types of wine mostly. 
+
+```{r, fig.cap = "Scatter Plot of Principal Components by Type of Wine"}
+pairs(
+  data_pcs$x[,1:4]
+  , col = data$type
+) 
+
+```
+
+Finally, we can test the correlation between each component against the original variables on the data set. Interestingly, after the 4th component, there doesn't seems to be any relevant correlation between the values, enforcing our decision of taking into account only the first four pc's. When we compare this correlation values against the loading analyzed previously, we get that all the loadings higher than the threshold established (at $\sqrt\frac{1}{p}$) have a high direct or inverse correlation ($\lvert x_i \rvert \ge 0.5$) with its principal component. 
+
+```{r, fig.cap = "Corraletion Plot between PC's and OG Variables"}
+cor(
+  data_quant
+  , data_pcs$x
+) %>% corrplot(
+    tl.col = "black"
+    , tl.cex = 0.6
+    , mar = c(0,0,2,0)
+    , method = "square"
+    , addCoef.col = "black"
+    , number.digits = 1
+    , number.cex = 0.6
+    , main = "PC vs Variable Correlation"
+)
+```
+
 # Clustering
 
-## Partitional Clustering 
+Lastly, we'll use clustering algorithms to find hidden groups inside our data.
+
+## Partitional Clustering
+
+### Number of Clusters
+
+First, we determined how many group there might be. For this we used 3 approaches: 
+
+* Number of clusters that stabilizes the within-cluster sum of squares (WSS). 
+* Number of clusters with highest average silhouette. (A higher silhouette means that a observation belong to the best possible cluster) 
+* Number of clusters that maximizes the Gap statistics. 
+```{r, fig.height=3, fig.cap = "Optimal number of clusters with different methods"}
+grid.arrange(
+  fviz_nbclust(
+    data_quant
+    , kmeans
+    , method = "wss"
+    , k.max = 10
+  )
+,
+  fviz_nbclust(
+    data_quant   
+    , kmeans
+    , method = "silhouette"
+    , k.max = 10)
+,
+  fviz_gap_stat(
+    clusGap(data_quant, FUN = kmeans, K.max = 10, B = 50)
+    , linecolor = "steelblue"
+    , maxSE = list(
+      method = "firstmax"
+      , SE.factor = 1
+    )
+  )
+, ncol = 3
+)
+```
+
+From this 3 methods we get different conclusions: 
+
+* The WSS stabilizes after the 3rd cluster. 
+* The maximum average silhouette is when k = 2, BUT its practically equal when k = 3. 
+* The Gap statistic says the discrepancy happens at 7 clusters. 
+
+With a vote of 2 out 3, we decided to move forward with a k = 3. 
+
+### K-Means, PAM & CLARA
+
+Now we try 3 different clustering algorithms, setting the centers at 3. 
+
+* K-Means: Clustering around centroids. 
+* PAM: **P**artitioning **A**round **M**edoids. Clustering around medoids. The difference is, a centroid is an artificial point calculated and the medoid is an actual point in the data set. 
+* CLARA: **C**lustering for **LAR**ge **A**pplications. An implementation of medoid clustering for large data sets. Same concept but it samples through subsets of the data to generate the optimal set of medoids. 
+
+We also try a second implementation of PAM, but instead of building it with the quantitative data (all this methods work just with quantitative values), we calculate the Gower Distance for the whole data set (including categorical variables) and use that matrix as input for the PAM algorithm. 
+
+We visualize the result of this algorithms plotting the observations using the first 2 principal components. These pc's explain 54% of the variability in the data. 
+
+```{r, fig.cap = "Clustering Algorithms with K = 3"}
+par(mfrow = c(2,2))
+
+data_kmeans = kmeans(data_quant, centers = 3, iter.max = 1000, nstart = 100)
+
+plot(
+  data_pcs$x[, c(1,2)]
+  , col = data_kmeans$cluster
+  , main = "K-Means"
+)
+
+data_pam = pam(data_quant, k = 3, metric = "euclidean", stand = F)
+plot(
+  data_pcs$x[, c(1,2)]
+  , col = data_pam$cluster
+  , main = "PAM"
+)
+
+data_clara = clara(data_quant, k = 3, metric = "euclidean", stand = F)
+
+plot(
+  data_pcs$x[, c(1,2)]
+  , col = data_clara$cluster
+  , main = "CLARA"
+)
+
+gower_dist = as.matrix(daisy(data, metric = "gower"))
+data_pam_gower = pam(gower_dist, k = 3, diss = T)
+plot(
+  data_pcs$x[, c(1,2)]
+  , col = data_pam_gower$cluster
+  , main = "PAM adding Categorical Variables"
+)
+
+```
+From the results of the clustering algorithms we conclude that the PAM implementation using the Gower distance has the better grouping (at least from the perspective of these PC's). Although that is not a completely fair comparison, giving that it does have more information that the other algorithms. The rest of the methods have seemingly the same result. 
+
+```{r}
+kmeans_sil = silhouette(data_kmeans$cluster, dist(data_quant, method = "euclidean"))
+pam_sil = silhouette(data_pam$cluster, dist(data_quant, method = "euclidean"))
+clara_sil = silhouette(data_clara$cluster, dist(data_quant, method = "euclidean"))
+pam_gower_sil = silhouette(data_pam_gower$cluster, gower_dist)
+
+par(mfrow = c(2,2))
+plot(
+  kmeans_sil
+  , main = "KMeans Silhouette"
+  , col = "darkblue"
+  , border = NA
+)
+
+plot(
+  pam_sil
+  , main = "PAM Silhouette"
+  , col = "darkblue"
+  , border = NA
+)
+
+plot(
+  clara_sil
+  , main = "CLARA Silhouette"
+  , col = "darkblue"
+  , border = NA
+)
+
+plot(
+  pam_gower_sil
+  , main = "PAM with Gower Distance Silhouette"
+  , col = "darkblue"
+  , border = NA
+)
+```
+
+We can compare the performance of this algorithms using its average silhouette width. The closest this value is to 1, the better grouping the algorithm did. Taking this observation into account, the PAM with Gower clustering has the lowest score of all. Its "better" performance in the previous plot might be due to the perspective on which the analysis was made, viewing only through the first 2 principal component. The rest of the method have the same average silhouette width of 0.51, meaning all of them did a pretty good job clustering. 
+
+If we had to choose only one method based on this metric, it would be the K-Means with k = 3. It has the same average silhouette than the other 2 methods, but it missclasified less values than PAM and CLARA. We notice this in the back tail on the left side of the silhouettes of each cluster. 
 
 ## Hierarchical Clustering 
 
+Now we'll use hierarchical clustering algorithms to group our data. The difference with these algorithms is that they do not require to fix the number of groups in advance.
+These methods work by merging smaller groups into larger ones or dividing larger groups into smaller ones of similar data. The procedure creates a hierarchy of clusters represented with dendograms. 
 
+### Agglomerative Methods 
+
+These methods take the bottom-up approach, merging small groups (initially each observation) into larger ones. We'll compare 4 agglomerative clustering algorithms: Single Linkage, Complete Linkage, Average Linkage and Ward Linkage. The difference between these algorithms are the metrics each one uses to merge clusters. 
+
+* Single Linkage: uses the minimum distance between two points in two clusters. 
+* Complete Linkage: the maximum distance between two points in two clusters. 
+* Average Linkage: the arithmetic mean of the distance of all the points between two clusters. 
+* Ward Linkage: the squared eucledean distance between the sample mean vector of two clusters. 
+
+
+#### Single Linkage 
+
+```{r}
+data_manh = daisy(data_quant, metric = "manhattan", stand = F)
+
+data_singlelink = hclust(data_manh, method = "single")
+data_singlelink_col = cutree(data_singlelink, 3)
+singlelink_sil = silhouette(data_singlelink_col, data_manh)
+
+par(mfrow = c(2,2))
+
+plot(data_singlelink, main = "Single Linkage Dendogram")
+rect.hclust(data_singlelink, k = 3)
+
+plot(
+  data_pcs$x[,c(1,2)]
+  , col = data_singlelink_col
+  , main = "Single Linkage Clusters"
+)
+
+plot(singlelink_sil, border = NA, main = "Single Linkage Silhouette")
+```
+
+#### Complete Linkage
+
+```{r}
+data_completelink = hclust(data_manh, method = "complete")
+data_completelink_col = cutree(data_completelink, 3)
+completelink_sil = silhouette(data_completelink_col, data_manh)
+
+par(mfrow = c(2,2))
+
+plot(data_completelink, main = "Complete Linkage Dendogram")
+rect.hclust(data_completelink, k = 3)
+
+plot(
+  data_pcs$x[,c(1,2)]
+  , col = data_completelink_col
+  , main = "Complete Linkage Clusters"
+)
+
+plot(completelink_sil, border = NA, main = "Complete Linkage Silhouette")
+```
+
+#### Average Linkage
+
+```{r}
+data_averagelink = hclust(data_manh, method = "average")
+data_averagelink_col = cutree(data_averagelink, 3)
+averagelink_sil = silhouette(data_averagelink_col, data_manh)
+
+par(mfrow = c(2,2))
+
+plot(data_averagelink, main = "Average Linkage Dendogram")
+rect.hclust(data_averagelink, k = 3)
+
+plot(
+  data_pcs$x[,c(1,2)]
+  , col = data_averagelink_col
+  , main = "Average Linkage Clusters"
+)
+
+plot(averagelink_sil, border = NA, main = "Average Linkage Silhouette")
+```
+
+
+#### Ward Linkage 
+
+```{r}
+data_wardlink = hclust(data_manh, method = "ward.D")
+data_wardlink_col = cutree(data_wardlink, 3)
+wardlink_sil = silhouette(data_wardlink_col, data_manh)
+
+par(mfrow = c(2,2))
+
+plot(data_wardlink, main = "Ward Linkage Dendogram")
+rect.hclust(data_wardlink, k = 3)
+
+plot(
+  data_pcs$x[,c(1,2)]
+  , col = data_wardlink_col
+  , main = "Ward Linkage Clusters"
+)
+
+plot(wardlink_sil, border = NA, main = "Ward Linkage Silhouette" )
+```
+
+### Conclusion 
+```{r}
+data.frame(
+  method = c("Single Linkage", "Complete Linkage", "Average Linkage", "Ward Linkage")
+  , avg_sil = round(c(mean(singlelink_sil[,3]), mean(completelink_sil[,3]), mean(averagelink_sil[,3]), mean(wardlink_sil[,3])),3)
+) %>% 
+  kbl(
+    format = "html"
+    , caption = "Linkage methods Average Silhouette width"
+    , col.names = c("Method", "Average Silhouette Width")
+  ) %>%
+  kable_material(c("striped"))
+```
+
+
+Based on the average silhouette width of all the linkage algorithms, the ward linkage method worked the best on our data. Interestingly, the single linkage only found one big cluster. 
+
+### Divisive Methods
+
+The divisive algorithm use a top down approach to clustering data. This means it starts with one big cluster and after each step each existing cluster is divided into two clusters. The most popular algorithm in this family is the *DI*visive *ANA*lysis Clustering (DIANA). 
+
+#### Diana Method
+
+```{r}
+data_diana = diana(data_quant, metric = "manhattan")
+
+data_diana_col = cutree(data_diana, 3)
+diana_sil = silhouette(data_diana_col, data_manh)
+
+par(mfrow = c(2,2))
+
+plot(data_diana, main = "DIANA Dendogram", which.plots = 2)
+rect.hclust(data_diana, k = 3)
+
+plot(
+  data_pcs$x[,c(1,2)]
+  , col = data_diana_col
+  , main = "DIANA Linkage Clusters"
+)
+
+plot(diana_sil, border = NA, main = "DIANA Linkage Silhouette" )
+
+```
+
+The average silhouette width of the method was 0.38. This means it did not outperformed the average and ward linkage algorithms. 
+
+At the end, the best clustering algorithm was K-Means with as average silhouette of 0.51. 
